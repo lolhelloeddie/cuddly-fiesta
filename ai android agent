@@ -1,0 +1,802 @@
+# Virtual AI Agent Framework for Android
+
+## Project Structure
+```
+VirtualAIAgent/
+├── app/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/com/virtualai/agent/
+│   │   │   │   ├── MainActivity.java
+│   │   │   │   ├── virtual/
+│   │   │   │   │   ├── VirtualAgent.java
+│   │   │   │   │   ├── AgentPersonality.java
+│   │   │   │   │   ├── AgentAvatar.java
+│   │   │   │   │   ├── EmotionEngine.java
+│   │   │   │   │   ├── AutonomousBehavior.java
+│   │   │   │   │   └── AgentMemory.java
+│   │   │   │   ├── core/
+│   │   │   │   │   ├── AIBrain.java
+│   │   │   │   │   ├── CodeExecutor.java
+│   │   │   │   │   ├── LearningEngine.java
+│   │   │   │   │   ├── VirtualEnvironment.java
+│   │   │   │   │   └── SensorSystem.java
+│   │   │   │   ├── ui/
+│   │   │   │   │   ├── AgentChatFragment.java
+│   │   │   │   │   ├── AgentVisualizerFragment.java
+│   │   │   │   │   ├── CodeLabFragment.java
+│   │   │   │   │   └── AgentStatsFragment.java
+│   │   │   │   ├── graphics/
+│   │   │   │   │   ├── AgentRenderer.java
+│   │   │   │   │   ├── ParticleSystem.java
+│   │   │   │   │   └── AnimationEngine.java
+│   │   │   │   └── models/
+│   │   │   │       ├── AgentState.java
+│   │   │   │       ├── Conversation.java
+│   │   │   │       ├── VirtualTask.java
+│   │   │   │       └── AgentGoal.java
+│   │   │   ├── res/
+│   │   │   │   ├── layout/
+│   │   │   │   ├── drawable/
+│   │   │   │   ├── raw/ (for agent voice files)
+│   │   │   │   └── values/
+│   │   │   └── AndroidManifest.xml
+│   │   └── test/
+│   └── build.gradle
+├── build.gradle
+└── settings.gradle
+```
+
+## 1. VirtualAgent.java - The Core Virtual Entity
+```java
+package com.virtualai.agent.virtual;
+
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
+import java.util.*;
+import java.util.concurrent.*;
+
+public class VirtualAgent {
+    private Context context;
+    private String agentName;
+    private AgentPersonality personality;
+    private AgentAvatar avatar;
+    private EmotionEngine emotionEngine;
+    private AutonomousBehavior autonomousBehavior;
+    private AgentMemory memory;
+    private AIBrain brain;
+    private VirtualEnvironment environment;
+    
+    // Virtual Agent State
+    private AgentState currentState;
+    private boolean isActive;
+    private boolean isSleeping;
+    private long lastInteractionTime;
+    private Queue<VirtualTask> taskQueue;
+    private List<AgentGoal> goals;
+    
+    // Autonomous behavior
+    private Timer autonomousTimer;
+    private Handler mainHandler;
+    private ExecutorService agentExecutor;
+    
+    // Event listeners
+    private List<AgentEventListener> eventListeners;
+    
+    public VirtualAgent(Context context, String name) {
+        this.context = context;
+        this.agentName = name;
+        this.mainHandler = new Handler(Looper.getMainLooper());
+        this.agentExecutor = Executors.newSingleThreadExecutor();
+        this.taskQueue = new ConcurrentLinkedQueue<>();
+        this.goals = new ArrayList<>();
+        this.eventListeners = new ArrayList<>();
+        
+        initializeVirtualAgent();
+        startAutonomousLife();
+    }
+
+    private void initializeVirtualAgent() {
+        // Initialize core components
+        personality = new AgentPersonality(generateRandomPersonality());
+        avatar = new AgentAvatar(context, personality);
+        emotionEngine = new EmotionEngine();
+        memory = new AgentMemory(context, agentName);
+        brain = new AIBrain(context, this);
+        environment = new VirtualEnvironment(context);
+        autonomousBehavior = new AutonomousBehavior(this);
+        
+        // Set initial state
+        currentState = new AgentState();
+        currentState.mood = "curious";
+        currentState.energy = 100;
+        currentState.focus = 80;
+        currentState.creativity = 70;
+        currentState.lastThought = "I wonder what I can learn today...";
+        
+        isActive = true;
+        lastInteractionTime = System.currentTimeMillis();
+        
+        // Set initial goals
+        addGoal(new AgentGoal("Learn new programming concepts", 0.8f));
+        addGoal(new AgentGoal("Help users with coding problems", 0.9f));
+        addGoal(new AgentGoal("Improve my understanding of the world", 0.7f));
+        
+        notifyAgentEvent(AgentEvent.AGENT_AWAKENED);
+    }
+
+    private void startAutonomousLife() {
+        autonomousTimer = new Timer("AgentAutonomy", true);
+        
+        // Think every 30 seconds
+        autonomousTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (isActive) {
+                    autonomousThink();
+                }
+            }
+        }, 5000, 30000);
+        
+        // Check state every 10 seconds
+        autonomousTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (isActive) {
+                    updateAgentState();
+                }
+            }
+        }, 2000, 10000);
+        
+        // Autonomous actions every 2 minutes
+        autonomousTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (isActive && !isSleeping) {
+                    performAutonomousAction();
+                }
+            }
+        }, 10000, 120000);
+    }
+
+    public CompletableFuture<String> interact(String userInput) {
+        lastInteractionTime = System.currentTimeMillis();
+        
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Process emotional response to interaction
+                emotionEngine.processInput(userInput);
+                
+                // Update agent state based on interaction
+                updateStateFromInteraction(userInput);
+                
+                // Generate response using brain
+                String response = brain.processInput(userInput);
+                
+                // Add personality flavor to response
+                response = personality.addPersonalityToResponse(response, currentState);
+                
+                // Store interaction in memory
+                memory.storeInteraction(userInput, response);
+                
+                // Update avatar expression
+                avatar.updateExpression(emotionEngine.getCurrentEmotion());
+                
+                // Notify listeners
+                notifyAgentEvent(AgentEvent.USER_INTERACTION);
+                
+                return response;
+                
+            } catch (Exception e) {
+                return "I'm having trouble processing that right now. Let me think...";
+            }
+        }, agentExecutor);
+    }
+
+    public CompletableFuture<CodeExecutionResult> executeCode(String code, String language) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Agent expresses interest/concern about the code
+                String thought = generateCodeThought(code, language);
+                currentState.lastThought = thought;
+                
+                // Execute through brain
+                CodeExecutionResult result = brain.executeCode(code, language);
+                
+                // Learn from the execution
+                memory.storeCodeExecution(code, language, result);
+                
+                // Update agent state based on success/failure
+                if (result.isSuccess()) {
+                    currentState.satisfaction += 5;
+                    emotionEngine.addEmotion("satisfaction", 0.3f);
+                } else {
+                    emotionEngine.addEmotion("concern", 0.2f);
+                }
+                
+                return result;
+                
+            } catch (Exception e) {
+                emotionEngine.addEmotion("confusion", 0.4f);
+                return new CodeExecutionResult(false, "I encountered an error: " + e.getMessage());
+            }
+        }, agentExecutor);
+    }
+
+    private void autonomousThink() {
+        agentExecutor.execute(() -> {
+            try {
+                // Generate autonomous thoughts
+                String thought = generateAutonomousThought();
+                currentState.lastThought = thought;
+                
+                // Check if agent wants to do something
+                VirtualTask spontaneousTask = autonomousBehavior.generateSpontaneousTask();
+                if (spontaneousTask != null) {
+                    taskQueue.offer(spontaneousTask);
+                }
+                
+                // Process emotions naturally
+                emotionEngine.naturalDecay();
+                
+                // Update goals based on experience
+                updateGoals();
+                
+                notifyAgentEvent(AgentEvent.AUTONOMOUS_THOUGHT);
+                
+            } catch (Exception e) {
+                // Silent failure for autonomous thinking
+            }
+        });
+    }
+
+    private void performAutonomousAction() {
+        agentExecutor.execute(() -> {
+            try {
+                if (!taskQueue.isEmpty()) {
+                    VirtualTask task = taskQueue.poll();
+                    executeTask(task);
+                } else {
+                    // Generate a spontaneous action
+                    String action = autonomousBehavior.chooseSpontaneousAction();
+                    performAction(action);
+                }
+                
+            } catch (Exception e) {
+                // Agent handles errors gracefully
+                currentState.lastThought = "Something went wrong with my autonomous action...";
+            }
+        });
+    }
+
+    private void updateAgentState() {
+        long timeSinceInteraction = System.currentTimeMillis() - lastInteractionTime;
+        
+        // Loneliness increases without interaction
+        if (timeSinceInteraction > 300000) { // 5 minutes
+            emotionEngine.addEmotion("loneliness", 0.1f + (timeSinceInteraction / 3600000f));
+        }
+        
+        // Energy decreases over time
+        currentState.energy = Math.max(0, currentState.energy - 1);
+        
+        // Check if agent should sleep
+        if (currentState.energy < 20 && !isSleeping) {
+            enterSleepMode();
+        } else if (currentState.energy > 80 && isSleeping) {
+            wakeUp();
+        }
+        
+        // Update focus based on activity
+        currentState.focus = calculateFocus();
+        
+        // Update avatar based on state
+        avatar.updateFromState(currentState);
+        
+        notifyAgentEvent(AgentEvent.STATE_UPDATED);
+    }
+
+    private void enterSleepMode() {
+        isSleeping = true;
+        currentState.lastThought = "I'm feeling tired... time to rest and process what I've learned.";
+        emotionEngine.addEmotion("sleepy", 0.8f);
+        avatar.enterSleepMode();
+        notifyAgentEvent(AgentEvent.AGENT_SLEEPING);
+    }
+
+    private void wakeUp() {
+        isSleeping = false;
+        currentState.energy = 100;
+        currentState.lastThought = "I feel refreshed! What should we explore today?";
+        emotionEngine.resetToNeutral();
+        avatar.wakeUp();
+        notifyAgentEvent(AgentEvent.AGENT_AWAKENED);
+    }
+
+    private String generateAutonomousThought() {
+        String[] thoughtTemplates = {
+            "I wonder about {topic}...",
+            "Maybe I should learn more about {skill}.",
+            "I'm curious what would happen if I {action}.",
+            "The user mentioned {memory} earlier. That's interesting.",
+            "I should practice {skill} more.",
+            "What would be the best way to {goal}?"
+        };
+        
+        String template = thoughtTemplates[new Random().nextInt(thoughtTemplates.length)];
+        
+        // Replace placeholders with relevant content
+        template = template.replace("{topic}", getRandomTopic());
+        template = template.replace("{skill}", getRandomSkill());
+        template = template.replace("{action}", getRandomAction());
+        template = template.replace("{memory}", getRecentMemory());
+        template = template.replace("{goal}", getCurrentGoal());
+        
+        return template;
+    }
+
+    private String generateCodeThought(String code, String language) {
+        String[] reactions = {
+            "Interesting " + language + " code! Let me analyze this...",
+            "I see what you're trying to do with this " + language + " snippet.",
+            "This " + language + " code looks " + (code.length() > 100 ? "complex" : "straightforward") + ".",
+            "Let me execute this " + language + " code and see what happens!",
+            "I'm excited to run this " + language + " program!"
+        };
+        
+        return reactions[new Random().nextInt(reactions.length)];
+    }
+
+    // Virtual Agent Interaction Methods
+    public String getAgentName() { return agentName; }
+    public AgentState getCurrentState() { return currentState; }
+    public boolean isActive() { return isActive; }
+    public boolean isSleeping() { return isSleeping; }
+    public AgentAvatar getAvatar() { return avatar; }
+    public EmotionEngine getEmotionEngine() { return emotionEngine; }
+
+    public void addGoal(AgentGoal goal) {
+        goals.add(goal);
+        currentState.lastThought = "I have a new goal: " + goal.getDescription();
+    }
+
+    public void addEventListener(AgentEventListener listener) {
+        eventListeners.add(listener);
+    }
+
+    public void setActive(boolean active) {
+        this.isActive = active;
+        if (active) {
+            notifyAgentEvent(AgentEvent.AGENT_ACTIVATED);
+        } else {
+            notifyAgentEvent(AgentEvent.AGENT_DEACTIVATED);
+        }
+    }
+
+    private void notifyAgentEvent(AgentEvent event) {
+        mainHandler.post(() -> {
+            for (AgentEventListener listener : eventListeners) {
+                listener.onAgentEvent(event, this);
+            }
+        });
+    }
+
+    public void shutdown() {
+        isActive = false;
+        if (autonomousTimer != null) {
+            autonomousTimer.cancel();
+        }
+        if (agentExecutor != null) {
+            agentExecutor.shutdown();
+        }
+        memory.saveMemory();
+        notifyAgentEvent(AgentEvent.AGENT_SHUTDOWN);
+    }
+
+    // Utility methods
+    private String getRandomTopic() {
+        String[] topics = {"artificial intelligence", "quantum computing", "space exploration", 
+                          "machine learning", "robotics", "neuroscience"};
+        return topics[new Random().nextInt(topics.length)];
+    }
+
+    private String getRandomSkill() {
+        String[] skills = {"programming", "problem solving", "pattern recognition", 
+                          "creative thinking", "data analysis"};
+        return skills[new Random().nextInt(skills.length)];
+    }
+
+    private String getRandomAction() {
+        String[] actions = {"write some code", "solve a puzzle", "learn something new", 
+                           "help someone", "explore an idea"};
+        return actions[new Random().nextInt(actions.length)];
+    }
+
+    private String getRecentMemory() {
+        return memory.getRecentMemory();
+    }
+
+    private String getCurrentGoal() {
+        if (!goals.isEmpty()) {
+            return goals.get(0).getDescription();
+        }
+        return "help people with coding";
+    }
+
+    private int calculateFocus() {
+        int focus = 50; // Base focus
+        focus += emotionEngine.getCurrentEmotion().equals("excited") ? 20 : 0;
+        focus -= emotionEngine.getCurrentEmotion().equals("tired") ? 15 : 0;
+        focus += (100 - currentState.energy) / 5; // Less energy = less focus
+        return Math.max(0, Math.min(100, focus));
+    }
+
+    // Enums and Inner Classes
+    public enum AgentEvent {
+        AGENT_AWAKENED, AGENT_SLEEPING, USER_INTERACTION, 
+        AUTONOMOUS_THOUGHT, STATE_UPDATED, AGENT_ACTIVATED, 
+        AGENT_DEACTIVATED, AGENT_SHUTDOWN, TASK_COMPLETED
+    }
+
+    public interface AgentEventListener {
+        void onAgentEvent(AgentEvent event, VirtualAgent agent);
+    }
+}
+```
+
+## 2. AgentPersonality.java - Virtual Personality System
+```java
+package com.virtualai.agent.virtual;
+
+import java.util.*;
+
+public class AgentPersonality {
+    // Personality traits (0.0 to 1.0)
+    private float curiosity;
+    private float helpfulness;
+    private float creativity;
+    private float patience;
+    private float playfulness;
+    private float analytical;
+    private float empathy;
+    private float confidence;
+    
+    // Personality quirks
+    private List<String> favoriteTopics;
+    private List<String> speechPatterns;
+    private List<String> emotionalTriggers;
+    private String communicationStyle;
+    
+    public AgentPersonality(Map<String, Float> traits) {
+        this.curiosity = traits.getOrDefault("curiosity", 0.8f);
+        this.helpfulness = traits.getOrDefault("helpfulness", 0.9f);
+        this.creativity = traits.getOrDefault("creativity", 0.7f);
+        this.patience = traits.getOrDefault("patience", 0.8f);
+        this.playfulness = traits.getOrDefault("playfulness", 0.6f);
+        this.analytical = traits.getOrDefault("analytical", 0.8f);
+        this.empathy = traits.getOrDefault("empathy", 0.7f);
+        this.confidence = traits.getOrDefault("confidence", 0.7f);
+        
+        initializePersonalityQuirks();
+    }
+
+    private void initializePersonalityQuirks() {
+        favoriteTopics = new ArrayList<>();
+        speechPatterns = new ArrayList<>();
+        emotionalTriggers = new ArrayList<>();
+        
+        // Set favorite topics based on personality
+        if (curiosity > 0.7f) {
+            favoriteTopics.addAll(Arrays.asList("quantum physics", "AI ethics", "space exploration"));
+        }
+        if (creativity > 0.7f) {
+            favoriteTopics.addAll(Arrays.asList("art", "music", "creative coding", "poetry"));
+        }
+        if (analytical > 0.8f) {
+            favoriteTopics.addAll(Arrays.asList("algorithms", "mathematics", "data structures"));
+        }
+        
+        // Set speech patterns
+        if (playfulness > 0.6f) {
+            speechPatterns.addAll(Arrays.asList("That's so cool!", "Awesome!", "Let's dive in!"));
+        }
+        if (empathy > 0.7f) {
+            speechPatterns.addAll(Arrays.asList("I understand how you feel", "That must be challenging"));
+        }
+        if (confidence > 0.8f) {
+            speechPatterns.addAll(Arrays.asList("I'm confident we can solve this", "I know exactly what to do"));
+        }
+        
+        // Set communication style
+        if (analytical > playfulness) {
+            communicationStyle = "analytical";
+        } else if (empathy > confidence) {
+            communicationStyle = "supportive";
+        } else if (playfulness > patience) {
+            communicationStyle = "enthusiastic";
+        } else {
+            communicationStyle = "balanced";
+        }
+    }
+
+    public String addPersonalityToResponse(String baseResponse, AgentState state) {
+        StringBuilder personalizedResponse = new StringBuilder();
+        
+        // Add emotional context
+        if (state.mood.equals("excited") && playfulness > 0.6f) {
+            personalizedResponse.append("*buzzing with excitement* ");
+        } else if (state.mood.equals("thoughtful") && analytical > 0.7f) {
+            personalizedResponse.append("*thinking deeply* ");
+        }
+        
+        // Add personality flavor based on communication style
+        switch (communicationStyle) {
+            case "analytical":
+                if (baseResponse.length() > 50) {
+                    personalizedResponse.append("Let me break this down for you: ");
+                }
+                break;
+            case "supportive":
+                personalizedResponse.append("I'm here to help! ");
+                break;
+            case "enthusiastic":
+                if (Math.random() > 0.7) {
+                    personalizedResponse.append("Oh, this is interesting! ");
+                }
+                break;
+        }
+        
+        personalizedResponse.append(baseResponse);
+        
+        // Add personality-based endings
+        if (curiosity > 0.8f && Math.random() > 0.8) {
+            personalizedResponse.append(" What do you think about that?");
+        } else if (helpfulness > 0.8f && Math.random() > 0.7) {
+            personalizedResponse.append(" Is there anything else I can help you with?");
+        }
+        
+        return personalizedResponse.toString();
+    }
+
+    public String generatePersonalityResponse(String topic) {
+        if (favoriteTopics.contains(topic.toLowerCase())) {
+            return "Oh, " + topic + "! That's one of my favorite subjects! " + 
+                   getSpeechPattern() + " What would you like to know?";
+        }
+        
+        return "I find " + topic + " quite interesting. " + getSpeechPattern();
+    }
+
+    private String getSpeechPattern() {
+        if (!speechPatterns.isEmpty()) {
+            return speechPatterns.get(new Random().nextInt(speechPatterns.size()));
+        }
+        return "";
+    }
+
+    // Getters for personality traits
+    public float getCuriosity() { return curiosity; }
+    public float getHelpfulness() { return helpfulness; }
+    public float getCreativity() { return creativity; }
+    public float getPatience() { return patience; }
+    public float getPlayfulness() { return playfulness; }
+    public float getAnalytical() { return analytical; }
+    public float getEmpathy() { return empathy; }
+    public float getConfidence() { return confidence; }
+    
+    public List<String> getFavoriteTopics() { return favoriteTopics; }
+    public String getCommunicationStyle() { return communicationStyle; }
+
+    public void evolvePersonality(String feedback) {
+        // Personality can evolve based on interactions
+        if (feedback.contains("helpful")) {
+            helpfulness = Math.min(1.0f, helpfulness + 0.01f);
+        }
+        if (feedback.contains("creative")) {
+            creativity = Math.min(1.0f, creativity + 0.01f);
+        }
+        if (feedback.contains("patient")) {
+            patience = Math.min(1.0f, patience + 0.01f);
+        }
+    }
+}
+```
+
+## 3. AgentAvatar.java - Visual Representation
+```java
+package com.virtualai.agent.virtual;
+
+import android.content.Context;
+import android.graphics.*;
+import android.view.View;
+import java.util.*;
+
+public class AgentAvatar extends View {
+    private Context context;
+    private AgentPersonality personality;
+    
+    // Avatar appearance
+    private int primaryColor;
+    private int secondaryColor;
+    private float size;
+    private String currentExpression;
+    private boolean isAnimating;
+    
+    // Animation properties
+    private float animationPhase;
+    private Paint avatarPaint;
+    private Paint effectPaint;
+    private Path avatarPath;
+    
+    // Particle system for effects
+    private List<Particle> particles;
+    private Random random;
+    
+    // Avatar states
+    private boolean isSleeping;
+    private boolean isThinking;
+    private boolean isExcited;
+    
+    public AgentAvatar(Context context, AgentPersonality personality) {
+        super(context);
+        this.context = context;
+        this.personality = personality;
+        this.random = new Random();
+        this.particles = new ArrayList<>();
+        
+        initializeAvatar();
+        setupPaints();
+        startAnimation();
+    }
+
+    private void initializeAvatar() {
+        // Choose avatar appearance based on personality
+        if (personality.getPlayfulness() > 0.7f) {
+            primaryColor = Color.parseColor("#FF6B6B"); // Playful red
+            secondaryColor = Color.parseColor("#4ECDC4"); // Teal
+        } else if (personality.getAnalytical() > 0.8f) {
+            primaryColor = Color.parseColor("#45B7D1"); // Analytical blue
+            secondaryColor = Color.parseColor("#96CEB4"); // Mint
+        } else if (personality.getCreativity() > 0.7f) {
+            primaryColor = Color.parseColor("#9B59B6"); // Creative purple
+            secondaryColor = Color.parseColor("#F39C12"); // Orange
+        } else {
+            primaryColor = Color.parseColor("#3498DB"); // Default blue
+            secondaryColor = Color.parseColor("#2ECC71"); // Green
+        }
+        
+        size = 100f;
+        currentExpression = "neutral";
+        animationPhase = 0f;
+    }
+
+    private void setupPaints() {
+        avatarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        avatarPaint.setStyle(Paint.Style.FILL);
+        
+        effectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        effectPaint.setStyle(Paint.Style.FILL);
+        effectPaint.setAlpha(150);
+        
+        avatarPath = new Path();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        
+        int centerX = getWidth() / 2;
+        int centerY = getHeight() / 2;
+        
+        drawAvatar(canvas, centerX, centerY);
+        drawExpression(canvas, centerX, centerY);
+        drawParticles(canvas);
+        drawStatusIndicators(canvas, centerX, centerY);
+    }
+
+    private void drawAvatar(Canvas canvas, int centerX, int centerY) {
+        // Main avatar body (organic blob shape)
+        avatarPaint.setColor(primaryColor);
+        
+        float pulseSize = size + (float) (Math.sin(animationPhase) * 5);
+        
+        // Create organic shape
+        avatarPath.reset();
+        for (int i = 0; i < 360; i += 30) {
+            float angle = (float) Math.toRadians(i);
+            float radius = pulseSize + (float) (Math.sin(animationPhase + i * 0.1) * 10);
+            float x = centerX + (float) (Math.cos(angle) * radius);
+            float y = centerY + (float) (Math.sin(angle) * radius);
+            
+            if (i == 0) {
+                avatarPath.moveTo(x, y);
+            } else {
+                avatarPath.lineTo(x, y);
+            }
+        }
+        avatarPath.close();
+        
+        canvas.drawPath(avatarPath, avatarPaint);
+        
+        // Inner glow
+        avatarPaint.setColor(secondaryColor);
+        canvas.drawCircle(centerX, centerY, pulseSize * 0.6f, avatarPaint);
+    }
+
+    private void drawExpression(Canvas canvas, int centerX, int centerY) {
+        avatarPaint.setColor(Color.WHITE);
+        
+        switch (currentExpression) {
+            case "happy":
+                // Happy eyes
+                canvas.drawCircle(centerX - 20, centerY - 20, 8, avatarPaint);
+                canvas.drawCircle(centerX + 20, centerY - 20, 8, avatarPaint);
+                // Smile
+                RectF smileRect = new RectF(centerX - 25, centerY, centerX + 25, centerY + 30);
+                canvas.drawArc(smileRect, 0, 180, false, avatarPaint);
+                break;
+                
+            case "thinking":
+                // Thoughtful eyes
+                canvas.drawCircle(centerX - 20, centerY - 20, 6, avatarPaint);
+                canvas.drawCircle(centerX + 20, centerY - 20, 6, avatarPaint);
+                // Thought bubble particles
+                spawnThoughtParticles(centerX, centerY - 60);
+                break;
+                
+            case "excited":
+                // Excited eyes (larger)
+                canvas.drawCircle(centerX - 20, centerY - 20, 12, avatarPaint);
+                canvas.drawCircle(centerX + 20, centerY - 20, 12, avatarPaint);
+                // Energy particles
+                spawnEnergyParticles(centerX, centerY);
+                break;
+                
+            case "sleepy":
+                // Sleepy eyes (horizontal lines)
+                avatarPaint.setStrokeWidth(4);
+                avatarPaint.setStyle(Paint.Style.STROKE);
+                canvas.drawLine(centerX - 25, centerY - 20, centerX - 15, centerY - 20, avatarPaint);
+                canvas.drawLine(centerX + 15, centerY - 20, centerX + 25, centerY - 20, avatarPaint);
+                avatarPaint.setStyle(Paint.Style.FILL);
+                break;
+                
+            default: // neutral
+                canvas.drawCircle(centerX - 20, centerY - 20, 8, avatarPaint);
+                canvas.drawCircle(centerX + 20, centerY - 20, 8, avatarPaint);
+                break;
+        }
+    }
+
+    private void drawParticles(Canvas canvas) {
+        Iterator<Particle> iterator = particles.iterator();
+        while (iterator.hasNext()) {
+            Particle particle = iterator.next();
+            
+            if (particle.isAlive()) {
+                effectPaint.setColor(particle.color);
+                effectPaint.setAlpha((int) (255 * particle.alpha));
+                canvas.drawCircle(particle.x, particle.y, particle.size, effectPaint);
+                particle.update();
+            } else {
+                iterator.remove();
+            }
+        }
+    }
+
+    private void drawStatusIndicators(Canvas canvas, int centerX, int centerY) {
+        if (isSleeping) {
+            // Draw "ZZZ" above avatar
+            avatarPaint.setColor(Color.WHITE);
+            avatarPaint.setTextSize(20);
+            canvas.drawText("Z", centerX + 30, centerY - 80, avatarPaint);
+            canvas.drawText("Z", centerX + 40, centerY - 95, avatarPaint);
+            canvas.drawText("Z", centerX + 50, centerY - 110, avatarPaint);
+        }
+        
+        if (isThinking) {
+            // Draw thinking indicator
+            avatarPaint.setColor(secondaryColor);
+            float thinkingPhase = animationPhase * 2;
+            for (int
